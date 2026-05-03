@@ -1,0 +1,24 @@
+{
+  "report_date": "Report Date: 29-Apr-2026",
+  "generated_at": "2026-05-03T18:21:22",
+  "raw_rows_before_deduplication": 57033,
+  "exact_duplicate_rows_removed": 650,
+  "raw_rows_after_deduplication": 56383,
+  "rows_missing_ofsi_group_id": 2264,
+  "master_records": 6035,
+  "screening_name_rows": 17119,
+  "entities_missing_dob_raw": 2772,
+  "entities_missing_dob_raw_pct": 45.93,
+  "entities_missing_fully_parsed_dob": 3328,
+  "entities_missing_fully_parsed_dob_pct": 55.14,
+  "entities_missing_address": 2895,
+  "entities_missing_address_pct": 47.97,
+  "entities_missing_key_identifiers": 4114,
+  "entities_missing_key_identifiers_pct": 68.17,
+  "distinct_normalized_name_types": [
+    "alias",
+    "primary_name",
+    "primary_name_variation",
+    "unknown"
+  ]
+}

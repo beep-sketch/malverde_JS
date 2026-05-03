@@ -1,0 +1,12 @@
+{
+  "report_date": "Report Date: 29-Apr-2026",
+  "raw_rows": 57033,
+  "rows_after_dedup": 56383,
+  "master_records": 6035,
+  "screening_name_rows": 17119,
+  "designation_type_counts": {
+    "Individual": 3872,
+    "Entity": 1531,
+    "Ship": 632
+  }
+}
