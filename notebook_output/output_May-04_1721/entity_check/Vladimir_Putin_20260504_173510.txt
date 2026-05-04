@@ -1,0 +1,44 @@
+Input name: Vladimir Putin
+Normalized: vladimir putin
+
+=== MATCHED NAMES ===
+Vladimir Putin (record_id: 14196)
+
+=== ENTITY DETAILS ===
+
+-------------------------
+record_id: 14196
+ofsi_group_id: 14196.0
+unique_id: RUS0251
+key_source: OFSI Group ID
+primary_name: Vladimir Vladimirovich PUTIN
+primary_name_normalized: vladimir vladimirovich putin
+all_names: Vladimir Vladimirovich PUTIN | Vladimir Putin | владимир владимирович путин
+all_aliases: Vladimir Putin
+date_of_births_raw: 07/10/1952
+date_of_births: 1952-10-07
+dob_years: 1952
+nationalities: Russia
+countries_of_birth: Russia
+address_countries: Russia
+associated_countries: Russia
+addresses: Moscow, Russia
+passport_numbers: nan
+national_identifier_numbers: nan
+sanctions_imposed: Asset freeze | Trust Services Sanctions | Director Disqualification Sanction
+designation_type: Individual
+source_row_count: 2
+type_of_entity: nan
+business_registration_number_s: nan
+subsidiaries: nan
+parent_company: nan
+imo_number: nan
+type_of_ship: nan
+current_owner_operator_s: nan
+previous_owner_operator_s: nan
+current_believed_flag_of_ship: nan
+previous_flags: nan
+tonnage_of_ship: nan
+length_of_ship: nan
+year_built: nan
+hull_identification_number_hin: nan

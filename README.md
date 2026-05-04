@@ -109,4 +109,4 @@ possible hits still need to be reviewed at full entity level.
 
 - The source CSV uses line 1 for the report date and line 2 for the actual header row.
 - The notebook is included as supporting analysis, but `transform_sanctions.py` is the main executable deliverable.
-- The intended final submission output folder is `notebook_output/output_May-03_1900/`.
+- The intended final submission output folder is `notebook_output/output_May-04_1721/`.

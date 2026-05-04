@@ -1,18 +1,15 @@
-
-
 import argparse
 import csv
 import json
 import re
 from datetime import datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import pandas as pd
 
 
-
 NAME_PART_COLUMNS = ["Title", "Name 1", "Name 2", "Name 3", "Name 4", "Name 5", "Name 6"]
-
 
 ADDRESS_COLUMNS = [
     "Address Line 1",
@@ -25,7 +22,6 @@ ADDRESS_COLUMNS = [
     "Address Country",
 ]
 
-# These fields are treated as useful country context for sanctions screening.
 ASSOCIATED_COUNTRY_COLUMNS = [
     "Address Country",
     "Country of birth",
@@ -34,8 +30,6 @@ ASSOCIATED_COUNTRY_COLUMNS = [
     "Previous flags",
 ]
 
-# Entity/vessel/organisation fields are retained because they can support manual
-# investigation after a possible screening hit
 ENTITY_DETAIL_COLUMNS = [
     "Type of entity",
     "Business registration number (s)",
@@ -94,11 +88,16 @@ def parse_args():
         default=Path("notebook_output"),
         help="Base directory where a timestamped run folder will be created.",
     )
+    parser.add_argument(
+        "--check-name",
+        type=str,
+        default="",
+        help="Optional entity name to screen against the sanctions names output.",
+    )
     return parser.parse_args()
 
 
 def normalize_space(value):
-    
     text = "" if value is None else str(value)
     text = text.replace("\u00a0", " ")
     text = re.sub(r"\s+", " ", text)
@@ -106,7 +105,7 @@ def normalize_space(value):
 
 
 def normalize_name_type(value):
-    """Map inconsistent source name labels into a small controlled vocab"""
+    """Map inconsistent source name labels into a small controlled vocabulary."""
     text = normalize_space(value).casefold()
     if not text:
         return "unknown"
@@ -120,14 +119,14 @@ def normalize_name_type(value):
 
 
 def normalize_for_matching(value):
-    """Create a simple canonical version of names for exact/fuzzy matching inputs"""
+    """Create a simple canonical version of names for exact/fuzzy matching inputs."""
     text = normalize_space(value).casefold()
     text = re.sub(r"[^\w\s]", " ", text)
     return normalize_space(text)
 
 
 def parse_raw_date(value):
-    """Convert DD/MM/YYYY dates to ISO format; keep unparseable dates blank"""
+    """Convert DD/MM/YYYY dates to ISO format; keep unparseable dates blank."""
     text = normalize_space(value)
     match = RAW_DATE_RE.match(text)
     if not match:
@@ -137,7 +136,7 @@ def parse_raw_date(value):
 
 
 def extract_years(values):
-    """Extract year-level DOB evidence from complete or partial date strings"""
+    """Extract year-level DOB evidence from complete or partial date strings."""
     seen = set()
     years = []
     for value in values:
@@ -149,7 +148,7 @@ def extract_years(values):
 
 
 def first_nonblank(values):
-    """Return the first populated value from an ordered list of source values"""
+    """Return the first populated value from an ordered list of source values."""
     for value in values:
         text = normalize_space(value)
         if text:
@@ -175,12 +174,12 @@ def unique_values(values, *, split_pipes=False):
 
 
 def unique_join(values, *, split_pipes=False):
-    """Join de-duplicated values using a visible delimiter for multi-value fields"""
+    """Join de-duplicated values using a visible delimiter for multi-value fields."""
     return " | ".join(unique_values(values, split_pipes=split_pipes))
 
 
 def column_slug(column_name):
-    """Convert source column names into safer output column names"""
+    """Convert source column names into safer output column names."""
     return (
         column_name.lower()
         .replace(" ", "_")
@@ -190,14 +189,22 @@ def column_slug(column_name):
     )
 
 
+def safe_filename_part(value):
+    """Convert user input into a safe filename component."""
+    text = normalize_space(value)
+    text = re.sub(r"[^A-Za-z0-9_-]+", "_", text)
+    text = re.sub(r"_+", "_", text)
+    return text.strip("_") or "entity"
+
+
 def read_report_date(input_path):
-    """Read the report date stored in the first metadata row of the OFSI CSV"""
+    """Read the report date stored in the first metadata row of the OFSI CSV."""
     with input_path.open("r", encoding="utf-8-sig", newline="") as handle:
         return handle.readline().strip()
 
 
 def make_run_output_dir(base_dir):
-    """Create a timestamped output folder without overwriting earlier runs"""
+    """Create a timestamped output folder without overwriting earlier runs."""
     base_dir.mkdir(parents=True, exist_ok=True)
     folder_name = datetime.now().strftime("output_%b-%d_%H%M")
     run_dir = base_dir / folder_name
@@ -216,7 +223,7 @@ def make_run_output_dir(base_dir):
 
 
 def validate_columns(raw):
-    """Fail early if the source schema is missing fields used by the pipeline"""
+    """Fail early if the source schema is missing fields used by the pipeline."""
     missing = [column for column in REQUIRED_COLUMNS if column not in raw.columns]
     if missing:
         missing_text = ", ".join(missing)
@@ -224,7 +231,7 @@ def validate_columns(raw):
 
 
 def load_raw(input_path):
-    """Load the OFSI CSV and create cleaned helper fields used downstream"""
+    """Load the OFSI CSV and create cleaned helper fields used downstream."""
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
 
@@ -234,30 +241,31 @@ def load_raw(input_path):
     raw_row_count = len(raw)
     duplicate_row_count = int(raw.duplicated().sum())
 
-    # Normalise every text field once at the start so later logic is consistent.
     for column in raw.columns:
         raw[column] = raw[column].map(normalize_space)
 
-    # Entity key: prefer OFSI Group ID, but fall back to Unique ID where missing.
     raw["record_id"] = raw["OFSI Group ID"].where(raw["OFSI Group ID"] != "", raw["Unique ID"])
-
     raw["name_type_normalized"] = raw["Name type"].map(normalize_name_type)
+
     raw["full_name"] = raw[NAME_PART_COLUMNS].apply(
         lambda row: " ".join(part for part in row if part),
         axis=1,
     )
+
     raw["full_address"] = raw[ADDRESS_COLUMNS].apply(
         lambda row: ", ".join(part for part in row if part),
         axis=1,
     )
 
     cleaned = raw.drop_duplicates().copy()
+
     load_stats = {
         "raw_rows_before_deduplication": int(raw_row_count),
         "exact_duplicate_rows_removed": duplicate_row_count,
         "raw_rows_after_deduplication": int(len(cleaned)),
         "rows_missing_ofsi_group_id": int((raw["OFSI Group ID"] == "").sum()),
     }
+
     return cleaned, load_stats
 
 
@@ -276,7 +284,6 @@ def build_master(raw):
     for record_id, group in raw.groupby("record_id", sort=True):
         group_values = {column: group[column].tolist() for column in group.columns}
 
-        # Primary name variations are useful both as names and as aliases.
         primary_mask = group["name_type_normalized"].isin(
             ["primary_name", "primary_name_variation"]
         )
@@ -330,9 +337,9 @@ def build_master(raw):
 
 
 def build_names(raw):
-   
-    # Preserve non-Latin names where no reconstructed Latin-script name exists.
+    """Build the screening-name file: one row per usable name."""
     names = raw[(raw["full_name"] != "") | (raw["Name non-latin script"] != "")].copy()
+
     names["ofsi_group_id"] = names["OFSI Group ID"]
     names["name_for_screening"] = names["full_name"].where(
         names["full_name"] != "",
@@ -360,6 +367,7 @@ def build_names(raw):
         "Address Country",
         "Designation Type",
     ]
+
     names = names[screening_columns].drop_duplicates(
         subset=[
             "record_id",
@@ -369,6 +377,7 @@ def build_names(raw):
             "D.O.B",
         ]
     )
+
     names = names.drop(columns=["D.O.B"]).rename(
         columns={
             "Unique ID": "unique_id",
@@ -379,6 +388,7 @@ def build_names(raw):
             "Designation Type": "designation_type",
         }
     )
+
     return names[
         [
             "record_id",
@@ -400,8 +410,9 @@ def build_names(raw):
 
 
 def build_quality_summary(raw, master, names, load_stats):
-    """Create reproducible quality metrics for the run summary JSON"""
+    """Create reproducible quality metrics for the run summary JSON."""
     master_records = len(master)
+
     missing_dob_entities = int((master["date_of_births_raw"] == "").sum())
     missing_parsed_dob_entities = int((master["date_of_births"] == "").sum())
     missing_address_entities = int((master["addresses"] == "").sum())
@@ -433,8 +444,142 @@ def build_quality_summary(raw, master, names, load_stats):
     }
 
 
+def score_name_match(user_name_normalized, sanctions_name_normalized):
+    """Score a user name against a sanctions name."""
+    if not user_name_normalized or not sanctions_name_normalized:
+        return 0.0
+
+    if user_name_normalized == sanctions_name_normalized:
+        return 100.0
+
+    if user_name_normalized in sanctions_name_normalized:
+        return 90.0
+
+    if sanctions_name_normalized in user_name_normalized:
+        return 85.0
+
+    return round(
+        SequenceMatcher(None, user_name_normalized, sanctions_name_normalized).ratio() * 100,
+        2,
+    )
+
+
+def run_entity_name_check(entity_name, names, master, output_dir):
+    """
+    Check a user-provided entity name against sanctions screening names.
+
+    The function writes a timestamped text report into the current run output folder.
+    """
+    entity_name = normalize_space(entity_name)
+    if not entity_name:
+        return None
+
+    entity_name_normalized = normalize_for_matching(entity_name)
+
+    scored = names.copy()
+    scored["match_score"] = scored["name_for_screening_normalized"].apply(
+        lambda sanctions_name: score_name_match(entity_name_normalized, sanctions_name)
+    )
+
+    matches = scored[scored["match_score"] >= 80].copy()
+    matches = matches.sort_values(
+        by=["match_score", "name_type_normalized", "name_for_screening"],
+        ascending=[False, True, True],
+    ).head(25)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_entity_name = safe_filename_part(entity_name)
+    report_path = output_dir / f"{safe_entity_name}_{timestamp}.txt"
+
+    lines = [
+        "Sanctions Entity Name Check",
+        "=" * 28,
+        f"Input entity name: {entity_name}",
+        f"Normalized input: {entity_name_normalized}",
+        f"Generated at: {datetime.now().isoformat(timespec='seconds')}",
+        "",
+        "Match logic:",
+        "- 100 = exact normalized name match",
+        "- 90 = input name appears inside sanctions name",
+        "- 85 = sanctions name appears inside input name",
+        "- Other scores use a simple text similarity ratio",
+        "- Report includes matches scoring 80 or above",
+        "",
+    ]
+
+    if matches.empty:
+        lines.extend(
+            [
+                "Result: No possible sanctions name matches found at score >= 80.",
+                "",
+                "Important: This is a simple name-only screening check. It should not be treated",
+                "as a final sanctions decision without manual review and other identifiers.",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                f"Result: {len(matches)} possible match(es) found at score >= 80.",
+                "",
+                "Possible matches:",
+                "-" * 17,
+            ]
+        )
+
+        master_lookup = master.set_index("record_id", drop=False)
+
+        for index, match in matches.iterrows():
+            record_id = match["record_id"]
+            master_row = master_lookup.loc[record_id] if record_id in master_lookup.index else {}
+
+            lines.extend(
+                [
+                    "",
+                    f"Match score: {match['match_score']}",
+                    f"Matched sanctions name: {match['name_for_screening']}",
+                    f"Name type: {match['name_type_normalized']}",
+                    f"Alias strength: {match['alias_strength']}",
+                    f"Record ID: {record_id}",
+                    f"OFSI Group ID: {match['ofsi_group_id']}",
+                    f"Unique ID: {match['unique_id']}",
+                    f"DOB raw: {match['date_of_birth_raw']}",
+                    f"DOB ISO: {match['date_of_birth_iso']}",
+                    f"DOB year: {match['dob_year']}",
+                    f"Nationalities: {match['nationalities']}",
+                    f"Country of birth: {match['country_of_birth']}",
+                    f"Address country: {match['address_country']}",
+                    f"Designation type: {match['designation_type']}",
+                ]
+            )
+
+            if isinstance(master_row, pd.Series):
+                lines.extend(
+                    [
+                        f"Primary name: {master_row.get('primary_name', '')}",
+                        f"All names: {master_row.get('all_names', '')}",
+                        f"All aliases: {master_row.get('all_aliases', '')}",
+                        f"Associated countries: {master_row.get('associated_countries', '')}",
+                        f"Sanctions imposed: {master_row.get('sanctions_imposed', '')}",
+                        f"Addresses: {master_row.get('addresses', '')}",
+                    ]
+                )
+
+        lines.extend(
+            [
+                "",
+                "Important: This is a simple name-only screening check. It should not be treated",
+                "as a final sanctions decision without manual review and other identifiers.",
+            ]
+        )
+
+    report_path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"Entity name check report: {report_path}")
+
+    return report_path
+
+
 def write_outputs(master, names, output_dir, report_date, quality_summary):
-    """Write final CSV outputs and a JSON run summary """
+    """Write final CSV outputs and a JSON run summary."""
     master_path = output_dir / "sanctioned_parties_master.csv"
     names_path = output_dir / "sanctioned_names.csv"
     summary_path = output_dir / "run_summary.json"
@@ -447,6 +592,7 @@ def write_outputs(master, names, output_dir, report_date, quality_summary):
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         **quality_summary,
     }
+
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     print(f"Report date: {report_date}")
@@ -457,13 +603,19 @@ def write_outputs(master, names, output_dir, report_date, quality_summary):
 
 def main():
     args = parse_args()
+
     report_date = read_report_date(args.input)
     raw, load_stats = load_raw(args.input)
+
     master = build_master(raw)
     names = build_names(raw)
     quality_summary = build_quality_summary(raw, master, names, load_stats)
+
     output_dir = make_run_output_dir(args.output_dir)
     write_outputs(master, names, output_dir, report_date, quality_summary)
+
+    if args.check_name:
+        run_entity_name_check(args.check_name, names, master, output_dir)
 
 
 if __name__ == "__main__":
