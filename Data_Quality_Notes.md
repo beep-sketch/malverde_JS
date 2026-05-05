@@ -8,7 +8,7 @@ described in the assignment brief.
 
 ## Data Quality Assessment
 
-The source dataset is heavily denormalised. The same sanctioned party often
+The source dataset is heavily denormalized. The same sanctioned party often
 appears across multiple rows because names, aliases, addresses, and other
 attributes are repeated across the file.
 
